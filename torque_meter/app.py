@@ -6,6 +6,7 @@ import logging
 import os
 import sys
 import traceback
+import weakref
 
 from . import APP_NAME, __version__
 from .diagnostics import setup_logging
@@ -18,6 +19,7 @@ def run_gui(sim: bool = False, debug: bool = False) -> int:
     log_path = setup_logging(debug)
     log.info("%s %s starting (Python %s, %s)", APP_NAME, __version__, sys.version.split()[0], sys.platform)
     os.environ.setdefault("PYQTGRAPH_QT_LIB", "PySide6")
+    from PySide6.QtCore import QCoreApplication, QEvent
     from PySide6.QtWidgets import QApplication, QMessageBox
 
     from .ui.main_window import MainWindow
@@ -33,15 +35,26 @@ def run_gui(sim: bool = False, debug: bool = False) -> int:
     if sim:
         settings.connection_mode = "simulator"
     window = MainWindow(settings, log_path)
+    window_ref = weakref.ref(window)  # the handler must not keep the window alive past cleanup
 
     def excepthook(exc_type, exc, tb):
         log.critical("Unhandled error:\n%s", "".join(traceback.format_exception(exc_type, exc, tb)))
-        window.emergency_stop()
-        QMessageBox.critical(window, "Unexpected error",
+        win = window_ref()
+        if win is None:
+            return
+        win.emergency_stop()
+        QMessageBox.critical(win, "Unexpected error",
                              f"{exc_type.__name__}: {exc}\n\nThe motor was switched off. Details are in the log "
                              "(Help → Save debug report).")
 
     sys.excepthook = excepthook
     app.aboutToQuit.connect(window.worker.shutdown)
     window.show()
-    return app.exec()
+    code = app.exec()
+    # Destroy the window while Qt is still alive. Left to Python's exit, it can be deleted after
+    # the QApplication, which crashes on some platforms ("invalid pointer").
+    sys.excepthook = sys.__excepthook__
+    window.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+    del window
+    return code

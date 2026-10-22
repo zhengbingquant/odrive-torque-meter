@@ -1,5 +1,6 @@
 """Drive the real app (offscreen) through Setup -> Connect (simulator) -> Measure -> stall test."""
 
+import gc
 import os
 import time
 
@@ -7,6 +8,7 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 QtWidgets = pytest.importorskip("PySide6.QtWidgets")
+from PySide6.QtCore import QCoreApplication, QEvent  # noqa: E402
 
 
 @pytest.fixture
@@ -24,7 +26,12 @@ def window(tmp_path, monkeypatch):
     win.show()
     yield win, app
     win.close()
+    # Destroy the window while Qt is alive; leaving it to Python's exit can crash on Linux.
+    win.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
     app.processEvents()
+    del win
+    gc.collect()
 
 
 def pump(app, seconds, until=None):
