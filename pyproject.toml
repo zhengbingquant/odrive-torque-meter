@@ -1,0 +1,34 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "odrive-torque-meter"
+version = "0.1.0"
+description = "Measure the torque of an ODrive V3.6 actuator: live dashboard, stall/hold tests, weight calibration. Windows and macOS."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Teh Bing Quan" }]
+dependencies = [
+    "PySide6-Essentials>=6.5",
+    "pyqtgraph>=0.13.3",
+    "numpy>=1.23",
+    "pyserial>=3.5",
+]
+
+[project.optional-dependencies]
+# Official ODrive library: an optional second way to talk to the board.
+native = ["odrive>=0.6.1"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+odrive-torque-meter = "torque_meter.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["torque_meter*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
