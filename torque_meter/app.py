@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gc
 import logging
 import os
 import sys
@@ -19,7 +20,7 @@ def run_gui(sim: bool = False, debug: bool = False) -> int:
     log_path = setup_logging(debug)
     log.info("%s %s starting (Python %s, %s)", APP_NAME, __version__, sys.version.split()[0], sys.platform)
     os.environ.setdefault("PYQTGRAPH_QT_LIB", "PySide6")
-    from PySide6.QtCore import QCoreApplication, QEvent
+    import shiboken6
     from PySide6.QtWidgets import QApplication, QMessageBox
 
     from .ui.main_window import MainWindow
@@ -48,13 +49,16 @@ def run_gui(sim: bool = False, debug: bool = False) -> int:
                              "(Help → Save debug report).")
 
     sys.excepthook = excepthook
-    app.aboutToQuit.connect(window.worker.shutdown)
+    shutdown_worker = window.worker.shutdown
+    app.aboutToQuit.connect(shutdown_worker)
     window.show()
     code = app.exec()
-    # Destroy the window while Qt is still alive. Left to Python's exit, it can be deleted after
-    # the QApplication, which crashes on some platforms ("invalid pointer").
+    # Free the window (and its charts) while Qt is still alive instead of during interpreter
+    # teardown. Signal connections to lambdas form reference cycles through C++ that Python's GC
+    # can't break, so deleting the C++ side is what actually releases them.
+    app.aboutToQuit.disconnect(shutdown_worker)
     sys.excepthook = sys.__excepthook__
-    window.deleteLater()
-    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
-    del window
+    shiboken6.delete(window)
+    del window, shutdown_worker
+    gc.collect()
     return code

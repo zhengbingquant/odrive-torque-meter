@@ -8,7 +8,7 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 QtWidgets = pytest.importorskip("PySide6.QtWidgets")
-from PySide6.QtCore import QCoreApplication, QEvent  # noqa: E402
+import shiboken6  # noqa: E402
 
 
 @pytest.fixture
@@ -22,14 +22,16 @@ def window(tmp_path, monkeypatch):
 
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
     apply_theme(app)
-    win = MainWindow(AppSettings(data_dir=str(tmp_path / "data"), sim_scenario="wall"))
-    win.show()
-    yield win, app
+    holder = [MainWindow(AppSettings(data_dir=str(tmp_path / "data"), sim_scenario="wall"))]
+    holder[0].show()
+    yield holder, app
+    # Free the window while Qt is alive rather than during interpreter teardown. pytest caches what
+    # a fixture yields, so the window lives in a list we can empty; deleting the C++ side breaks the
+    # lambda connection cycles the GC can't see through.
+    win = holder.pop()
     win.close()
-    # Destroy the window while Qt is alive; leaving it to Python's exit can crash on Linux.
-    win.deleteLater()
-    QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
     app.processEvents()
+    shiboken6.delete(win)
     del win
     gc.collect()
 
@@ -45,7 +47,8 @@ def pump(app, seconds, until=None):
 
 
 def test_full_flow_with_simulator(window, tmp_path):
-    win, app = window
+    holder, app = window
+    win = holder[0]
     setup = win.setup_page
     assert win.stack.currentIndex() == 0
 

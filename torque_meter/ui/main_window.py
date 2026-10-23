@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import weakref
 from datetime import date
 from pathlib import Path
 
@@ -49,16 +50,19 @@ class _SpaceStop(QObject):
 
     def __init__(self, window: MainWindow):
         super().__init__(window)
-        self.window = window
+        self._window = weakref.ref(window)  # the application must not keep the window alive
 
     def eventFilter(self, obj, event) -> bool:
+        window = self._window()
+        if window is None:
+            return False
         if event.type() == QEvent.KeyPress and event.key() == Qt.Key_Space and not event.isAutoRepeat():
             focus = QApplication.focusWidget()
             typing = isinstance(focus, (QLineEdit, QAbstractSpinBox, QPlainTextEdit)) or (
                 isinstance(focus, QComboBox) and focus.isEditable())
-            if not typing and QApplication.activeModalWidget() is None and self.window.isActiveWindow() \
-                    and self.window.connected:
-                self.window.emergency_stop()
+            if not typing and QApplication.activeModalWidget() is None and window.isActiveWindow() \
+                    and window.connected:
+                window.emergency_stop()
                 return True
         return False
 
@@ -106,7 +110,8 @@ class MainWindow(QMainWindow):
         self._wire()
         self._menus()
         QShortcut(QKeySequence(Qt.Key_Escape), self, activated=self.emergency_stop, context=Qt.ApplicationShortcut)
-        QApplication.instance().installEventFilter(_SpaceStop(self))
+        self._space_filter = _SpaceStop(self)
+        QApplication.instance().installEventFilter(self._space_filter)
         self.go_to(STEP_SETUP)
 
     # --- layout ----------------------------------------------------------------------------
@@ -428,6 +433,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         self._closing = True
+        QApplication.instance().removeEventFilter(self._space_filter)
         self._stop_recording()
         self.worker.shutdown()
         try:

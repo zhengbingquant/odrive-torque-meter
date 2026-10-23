@@ -1,4 +1,7 @@
-PySide6-Essentials>=6.5
+# PySide6 6.12.0 on Linux corrupts Python reference counts (crashes within seconds) unless
+# Python is 3.12 or newer, so Linux with an older Python stays on 6.11.
+PySide6-Essentials>=6.5,<6.12; sys_platform == "linux" and python_version < "3.12"
+PySide6-Essentials>=6.5; sys_platform != "linux" or python_version >= "3.12"
 pyqtgraph>=0.13.3
 numpy>=1.23
 pyserial>=3.5
